@@ -32,7 +32,7 @@ extern argumentType intType;
  * */
 extern map_t hashmap_create(size_t initialCapacity, float loadFactor, float growth, hash_t hashFunction, argumentType keyType, argumentType valueType);
 
-// Inserts <key, value> pair to hashmap or changes the value of the existing one
+// Inserts <key, value> pair to hashmap / changes the value of the existing one
 // Returns true if successful
 extern bool hashmap_set(map_t map, const void *key, const void *value);
 
