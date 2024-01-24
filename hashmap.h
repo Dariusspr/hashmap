@@ -16,14 +16,31 @@ typedef struct
     bool (*cmp)(const void *value1, const void *value2); // returns true if equal
 } argumentType;
 
-// builtin types
+// builtin common types
 extern argumentType stringType;
 extern argumentType intType; 
 
-// returns map_t object if it is successfully created
+
+/* Creates map
+ * Returns NULL if failed to create map_t map
+ * initialCapacity
+ * loadFactor - map grows when (current bucket count / capacity) > loadFactor
+ * growth - new capacity = current capcity * growth
+ * hashFunction - a pointer to a function that takes const void * as an argument and returns size_t hashValue
+ * keyType - argumentType struct containing neccessary function pointers
+ * valueType - argumentType struct containing neccessary function pointers
+ * */
 extern map_t hashmap_create(size_t initialCapacity, float loadFactor, float growth, hash_t hashFunction, argumentType keyType, argumentType valueType);
-extern bool hashmap_set(map_t map, const void *key, const void *value); // returns false if failed
-extern const void *hashmap_get(map_t map, const void *key); // returns NULL if such key doesn't exist
+
+// Inserts <key, value> pair to hashmap or changes the value of the existing one
+// Returns true if successful
+extern bool hashmap_set(map_t map, const void *key, const void *value);
+
+// returns a pointer to a  copy of value at key
+// returns NULL if key doesn't exist
+extern void *hashmap_get(map_t map, const void *key);
+
+
 extern void hashmap_free(map_t map);
 
 
