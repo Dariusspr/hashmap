@@ -32,15 +32,16 @@ extern argumentType intType;
  * */
 extern map_t hashmap_create(size_t initialCapacity, float loadFactor, float growth, hash_t hashFunction, argumentType keyType, argumentType valueType);
 
-// Inserts <key, value> pair to hashmap / changes the value of the existing one
+// Inserts <key, value> pair to hashmap or changes the value of the existing one
 // Returns true if successful
 extern bool hashmap_set(map_t map, const void *key, const void *value);
 
-// returns a pointer to a  copy of value at key
+// returns a const pointer to a value at key
 // returns NULL if key doesn't exist
-extern void *hashmap_get(map_t map, const void *key);
+extern const void *hashmap_get(map_t map, const void *key);
 
-
+// frees allocated memory for each element in 'map'
+// frees alloacated memory for 'map'
 extern void hashmap_free(map_t map);
 
 

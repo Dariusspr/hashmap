@@ -53,22 +53,23 @@ map_t hashmap_create(size_t capacity, float loadFactor, float growth, hash_t has
     return map;
 }
 
-// returns a number of buckets checked until empty spot/already existing bucket was found. 
+// returns a count of buckets that were checked until expected bucket was found
 // buckett is a pointer to an empty bucket or the one with identical key
 static size_t findBucket(map_t map, const void *key, bucket ***buckett)
-{   
-    size_t hashValue = map->hash(key) % map->capacity; 
+{  
     size_t checked = 0;
     
+    size_t hashValue = map->hash(key) % map->capacity; 
     if (map->buckets[hashValue] != NULL)
     {
-        while (!map->keyType.cmp(map->buckets[hashValue]->key, key))
+        while (map->buckets[hashValue] != NULL && !map->keyType.cmp(map->buckets[hashValue]->key, key))
         {
-            assert(checked++ >= map->capacity);
+            assert(checked++ < map->capacity);
             hashValue = (hashValue + 1) % map->capacity;
        }
     }
     *buckett = &(map->buckets[hashValue]);
+    
     return checked;
 }
 
@@ -88,25 +89,46 @@ bool hashmap_set(map_t map, const void *key, const void *value)
             fprintf(stderr, "Warning: Memory allocation for bucket failed.\n");
             return false;
         }
-        map->count++;
         
-        (*buckett)->key = map->keyType.copy(key);
+        (*buckett)->key = map->keyType.copy(key);        
         (*buckett)->offset = offset;
+        
+        map->count++;
     }
-    (*buckett)->value = map->valueType.copy(value);
+    else
+    {
+        free((*buckett)->value); // free previous value
+    }
+    (*buckett)->value = map->valueType.copy(value);       
+    
     return true;
 }
 
-void *hashmap_get(map_t map, const void *key)
+const void *hashmap_get(map_t map, const void *key)
 {
     bucket **buckett = NULL;
     findBucket(map, key, &buckett);
     if (*buckett == NULL)
         return NULL;
    
-    return map->valueType.copy((*buckett)->value);
+    return (*buckett)->value;
 }
 
+
+void hashmap_free(map_t map)
+{
+    for (size_t i = 0; i < map->capacity; i++)
+    {
+        if (map->buckets[i] != NULL)
+        {
+            free(map->buckets[i]->key);
+            free(map->buckets[i]->value);
+            free(map->buckets[i]);
+        }
+    }
+    free(map->buckets);
+    free(map); 
+}
 
 ///////////////////////////// BUILT-IN TYPES ///////////////////////////////////
 
