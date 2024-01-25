@@ -14,10 +14,12 @@ typedef struct
 struct hashmap
 {
     bucket **buckets;
+    size_t initialCapacity;
     size_t capacity;
     size_t count;
 
-    float loadFactor;
+    float growAt;
+    float shrinkAt;
     float growth;
 
     hash_t hash;
@@ -27,7 +29,7 @@ struct hashmap
 };
 
 
-map_t hashmap_create(size_t capacity, float loadFactor, float growth, hash_t hashFunction, argumentType keyType, argumentType valueType)
+map_t hashmap_create(size_t capacity, float growAt, float shrinkAt, float growth, hash_t hashFunction, argumentType keyType, argumentType valueType)
 {
     map_t map = (map_t)malloc(sizeof(struct hashmap));
     if (map == NULL)
@@ -44,8 +46,11 @@ map_t hashmap_create(size_t capacity, float loadFactor, float growth, hash_t has
     }
 
     // TODO: add validation
+    map->initialCapacity = capacity;
     map->capacity = capacity;
-    map->loadFactor = loadFactor;
+    map->count = 0;
+    map->growAt = growAt;
+    map->shrinkAt = shrinkAt;
     map->growth = growth;
     map->hash = hashFunction;
     map->keyType = keyType;
@@ -53,9 +58,72 @@ map_t hashmap_create(size_t capacity, float loadFactor, float growth, hash_t has
     return map;
 }
 
+// TODO: add validation in below functions (ex. is map NULL?)
+
+// returns true if current load >= growAt or overflows in the next insert
+static bool isMapOverloaded(map_t map)
+{
+    float currentLoad = (float)map->count / map->capacity;
+    float futureLoad = (float)(map->count + 1.0) / map->capacity;
+    return currentLoad >= map->growAt || futureLoad > 1.0;
+}
+
+// returns true if current load <= shrinkAt and initial capacity < current capacity
+static bool isMapUnderloaded(map_t map)
+{
+    float currentLoad = (float)map->count / map->capacity;
+    return currentLoad <= map->shrinkAt && map->initialCapacity < map->capacity;
+}
+
+// Rehashes elements to the new map (doesnt transfer tombstones from previous map)
+// returns the count of occupied buckets in the new map
+static size_t rehashMap(map_t map, bucket ***newBuckets, size_t newCapacity)
+{
+    size_t count = 0;
+    for (size_t i = 0; i < map->capacity; i++)
+    {
+        if (map->buckets[i] == NULL)
+            continue; // skip empty buckets
+
+        // TODO: modify findBucket() so i can call it ??
+        // Below code is copied from findBucket()
+        size_t hashValue = map->hash(map->buckets[i]->key) % newCapacity;
+        size_t checked = 0;
+        while ((*newBuckets)[hashValue] != NULL && !map->keyType.cmp((*newBuckets)[hashValue]->key, map->buckets[i]->key))
+        {
+            assert(checked++ < map->capacity);
+            hashValue = (hashValue + 1) % newCapacity;
+        }
+        
+        map->buckets[i]->offset = checked;
+        (*newBuckets)[hashValue] = map->buckets[i];
+        count++;
+    }
+    return count;
+}
+
+// returns true if successfully resized
+static bool resizeMap(map_t map, size_t newCapacity)
+{
+    bucket** newBuckets = (bucket **)calloc(newCapacity, sizeof(bucket *));
+    if (newBuckets == NULL)
+    {
+        fprintf(stderr, "Warning: Memory allocation for hash map's buckets failed.\n");
+        return false;
+    }
+    
+    size_t newCount = rehashMap(map, &newBuckets, newCapacity);
+    free(map->buckets);
+    map->buckets = newBuckets;
+    map->capacity = newCapacity;
+    map->count = newCount;
+    
+    return true;
+}
+
 // returns a count of buckets that were checked until expected bucket was found
 // buckett is a pointer to an empty bucket or the one with identical key
-static size_t findBucket(map_t map, const void *key, bucket ***buckett)
+static size_t findBucket(map_t map, const void *key, bucket ***buckett) // * - to modify outside of function's scope, another * to point to bucket* obj.
 {  
     size_t checked = 0;
     
@@ -74,10 +142,16 @@ static size_t findBucket(map_t map, const void *key, bucket ***buckett)
 }
 
 bool hashmap_set(map_t map, const void *key, const void *value)
-{
-    
-    // TODO: if current load exceeds load factor, grow bucket* array   
-    
+{ 
+    if (isMapOverloaded(map))
+    {
+        if (resizeMap(map, map->capacity * map->growth) == false)
+        {
+            fprintf(stderr, "Warning: failed to set new value in the map due to failure in resizing map.\n");
+            return false;
+        }
+    }
+
     bucket **buckett = NULL;
     size_t offset = findBucket(map, key, &buckett);
     
@@ -114,6 +188,32 @@ const void *hashmap_get(map_t map, const void *key)
     return (*buckett)->value;
 }
 
+bool hashmap_delete(map_t map, const void *key)
+{
+     if (isMapUnderloaded(map))
+    {
+        size_t newCapacity = (map->capacity / map->growth < map->initialCapacity) ? map->initialCapacity : map->capacity / map->growth;
+        if (resizeMap(map, newCapacity)== false)
+        {
+            fprintf(stderr, "Warning: failed to delete value in the map due to failure in resizing map.\n");
+            return false;
+        }
+    }
+
+    bucket **buckett = NULL;
+    findBucket(map, key, &buckett);
+    if (*buckett == NULL)
+    {
+        return false;
+    }
+
+    free((*buckett)->key);
+    free((*buckett)->value);
+    free(*buckett);
+    *buckett = NULL;
+    map->count--;
+    return true;
+}
 
 void hashmap_free(map_t map)
 {
@@ -151,6 +251,9 @@ static void *stringCopy(const void *value)
 
 static bool stringCmp(const void *value1, const void *value2)
 {
+     if (value1 == NULL || value2 == NULL) 
+        return false;
+    
     size_t size1 = strlen((const char *)value1);
     size_t size2 = strlen((const char *)value2);
     size_t cmpSize = (size1 < size2) ? size1 : size2;
@@ -179,6 +282,9 @@ static void *intCopy(const void *value)
 
 static bool intCmp(const void *value1, const void *value2)
 {
+    if (value1 == NULL || value2 == NULL) 
+        return false;
+    
     return *(const int *) value1 == *(const int *)value2;
 }
 
