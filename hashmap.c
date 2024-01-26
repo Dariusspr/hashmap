@@ -4,6 +4,26 @@
 #include <assert.h>
 #include "hashmap.h"
 
+#define CHECK_EXIT(condition) \
+    do { \
+        if (!(condition)) \
+        { \
+            fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, strerror(errno)); \
+            exit(EXIT_FAILURE); \
+        } \
+    } while(0)
+
+#define CHECK_RETURN(condition, error, value) \
+    do { \
+        if (!(condition)) \
+        { \
+            errno = (error); \
+            return (value); \
+        } \
+    } while(0)
+
+
+
 typedef struct 
 {
     void *key;
@@ -28,24 +48,24 @@ struct hashmap
     argumentType valueType;
 };
 
+// TODO: add function to print info about map state (used, capacity, collisions...)
 
 map_t hashmap_create(size_t capacity, float growAt, float shrinkAt, float growth, hash_t hashFunction, argumentType keyType, argumentType valueType)
 {
+   CHECK_RETURN(capacity != 0 && 
+                growAt > 0.0 && growAt <= 1.0 && 
+                shrinkAt >= 0.0 && shrinkAt < growAt && 
+                growth > 0.0 && 
+                hashFunction != NULL,
+                EINVAL,
+                NULL); 
+    
     map_t map = (map_t)malloc(sizeof(struct hashmap));
-    if (map == NULL)
-    {
-        fprintf(stderr, "Warning: Memory allocation for hash map failed.\n");
-        return NULL;
-    }
-
+    CHECK_EXIT(map != NULL);
+    
     map->buckets = (bucket **)calloc(capacity, sizeof(bucket *));
-    if (map->buckets == NULL)
-    {
-        fprintf(stderr, "Warning: Memory allocation for hash map's buckets failed.\n");
-        return NULL;
-    }
+    CHECK_EXIT(map->buckets != NULL);
 
-    // TODO: add validation
     map->initialCapacity = capacity;
     map->capacity = capacity;
     map->count = 0;
@@ -58,7 +78,6 @@ map_t hashmap_create(size_t capacity, float growAt, float shrinkAt, float growth
     return map;
 }
 
-// TODO: add validation in below functions (ex. is map NULL?)
 
 // returns true if current load >= growAt or overflows in the next insert
 static bool isMapOverloaded(map_t map)
@@ -85,8 +104,6 @@ static size_t rehashMap(map_t map, bucket ***newBuckets, size_t newCapacity)
         if (map->buckets[i] == NULL)
             continue; // skip empty buckets
 
-        // TODO: modify findBucket() so i can call it ??
-        // Below code is copied from findBucket()
         size_t hashValue = map->hash(map->buckets[i]->key) % newCapacity;
         size_t checked = 0;
         while ((*newBuckets)[hashValue] != NULL && !map->keyType.cmp((*newBuckets)[hashValue]->key, map->buckets[i]->key))
@@ -102,23 +119,17 @@ static size_t rehashMap(map_t map, bucket ***newBuckets, size_t newCapacity)
     return count;
 }
 
-// returns true if successfully resized
-static bool resizeMap(map_t map, size_t newCapacity)
+static void resizeMap(map_t map, size_t newCapacity)
 {
     bucket** newBuckets = (bucket **)calloc(newCapacity, sizeof(bucket *));
-    if (newBuckets == NULL)
-    {
-        fprintf(stderr, "Warning: Memory allocation for hash map's buckets failed.\n");
-        return false;
-    }
-    
+    CHECK_EXIT(newBuckets != NULL);
+
     size_t newCount = rehashMap(map, &newBuckets, newCapacity);
     free(map->buckets);
     map->buckets = newBuckets;
     map->capacity = newCapacity;
     map->count = newCount;
     
-    return true;
 }
 
 // returns a count of buckets that were checked until expected bucket was found
@@ -134,7 +145,7 @@ static size_t findBucket(map_t map, const void *key, bucket ***buckett) // * - t
         {
             assert(checked++ < map->capacity);
             hashValue = (hashValue + 1) % map->capacity;
-       }
+        }
     }
     *buckett = &(map->buckets[hashValue]);
     
@@ -142,14 +153,12 @@ static size_t findBucket(map_t map, const void *key, bucket ***buckett) // * - t
 }
 
 bool hashmap_set(map_t map, const void *key, const void *value)
-{ 
+{
+    CHECK_RETURN(map != NULL && key != NULL && value != NULL, EINVAL, false);
+    
     if (isMapOverloaded(map))
     {
-        if (resizeMap(map, map->capacity * map->growth) == false)
-        {
-            fprintf(stderr, "Warning: failed to set new value in the map due to failure in resizing map.\n");
-            return false;
-        }
+        resizeMap(map, map->capacity * map->growth);
     }
 
     bucket **buckett = NULL;
@@ -158,11 +167,7 @@ bool hashmap_set(map_t map, const void *key, const void *value)
     if (*buckett == NULL)
     {
         *buckett = malloc(sizeof(bucket));
-        if (*buckett == NULL)
-        {
-            fprintf(stderr, "Warning: Memory allocation for bucket failed.\n");
-            return false;
-        }
+        CHECK_EXIT(*malloc != NULL);
         
         (*buckett)->key = map->keyType.copy(key);        
         (*buckett)->offset = offset;
@@ -180,24 +185,24 @@ bool hashmap_set(map_t map, const void *key, const void *value)
 
 const void *hashmap_get(map_t map, const void *key)
 {
+    CHECK_RETURN(map != NULL && key != NULL, EINVAL, NULL);
+    
     bucket **buckett = NULL;
     findBucket(map, key, &buckett);
-    if (*buckett == NULL)
+    if (*buckett == NULL)   
         return NULL;
-   
+
     return (*buckett)->value;
 }
 
 bool hashmap_delete(map_t map, const void *key)
 {
-     if (isMapUnderloaded(map))
+    CHECK_RETURN(map != NULL && key != NULL, EINVAL, false);
+
+    if (isMapUnderloaded(map))
     {
         size_t newCapacity = (map->capacity / map->growth < map->initialCapacity) ? map->initialCapacity : map->capacity / map->growth;
-        if (resizeMap(map, newCapacity)== false)
-        {
-            fprintf(stderr, "Warning: failed to delete value in the map due to failure in resizing map.\n");
-            return false;
-        }
+        resizeMap(map, newCapacity);
     }
 
     bucket **buckett = NULL;
@@ -211,12 +216,16 @@ bool hashmap_delete(map_t map, const void *key)
     free((*buckett)->value);
     free(*buckett);
     *buckett = NULL;
+    
     map->count--;
+    
     return true;
 }
 
-void hashmap_free(map_t map)
+bool hashmap_free(map_t map)
 {
+    CHECK_RETURN(map != NULL, EINVAL, false);
+
     for (size_t i = 0; i < map->capacity; i++)
     {
         if (map->buckets[i] != NULL)
@@ -226,25 +235,26 @@ void hashmap_free(map_t map)
             free(map->buckets[i]);
         }
     }
+
     free(map->buckets);
     free(map); 
+
+    return true;
 }
 
 ///////////////////////////// BUILT-IN TYPES ///////////////////////////////////
+
 
 // STRING TYPE
 
 static void *stringCopy(const void *value)
 {
-    size_t size = strlen(value) + 1; // +1 for '\0'
-    
-    char *copy = malloc(size);
-    if (copy == NULL)
-    {
-        fprintf(stderr, "Warning: Memory allocation for string copy failed.\n");
+    if (value == NULL)
         return NULL;
-    }
-
+    
+    size_t size = strlen(value) + 1; // +1 for '\0'
+    char *copy = malloc(size);
+    CHECK_EXIT(copy != NULL);
     memcpy(copy, value, size);
     return copy;
 }
@@ -268,12 +278,11 @@ argumentType stringType = {.copy = stringCopy, .cmp = stringCmp};
 
 static void *intCopy(const void *value)
 {
-    int *copy = (int*)malloc(sizeof(int));
-    if (copy == NULL)
-    {
-        fprintf(stderr, "Warning: Memory allocation for int copy failed.\n");
+    if (value == NULL)
         return NULL;
-    }
+
+    int *copy = (int*)malloc(sizeof(int));
+    CHECK_EXIT(copy != NULL);
 
     *copy = *(const int *)value;
 
