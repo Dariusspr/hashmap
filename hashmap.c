@@ -154,7 +154,7 @@ static size_t findBucket(map_t map, const void *key, bucket ***buckett) // * - t
     return checked;
 }
 
-bool hashmap_set(map_t map, const void *key, const void *value)
+bool _hashmap_set(map_t map, const void *key, const void *value)
 {
     CHECK_RETURN(map != NULL && key != NULL && value != NULL, EINVAL, false);
     
@@ -185,7 +185,7 @@ bool hashmap_set(map_t map, const void *key, const void *value)
     return true;
 }
 
-const void *hashmap_get(map_t map, const void *key)
+const void *_hashmap_get(map_t map, const void *key)
 {
     CHECK_RETURN(map != NULL && key != NULL, EINVAL, NULL);
     
@@ -197,7 +197,7 @@ const void *hashmap_get(map_t map, const void *key)
     return (*buckett)->value;
 }
 
-bool hashmap_delete(map_t map, const void *key)
+bool _hashmap_delete(map_t map, const void *key)
 {
     CHECK_RETURN(map != NULL && key != NULL, EINVAL, false);
 
