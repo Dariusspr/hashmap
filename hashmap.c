@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include "hashmap.h"
 
 #define CHECK_EXIT(condition) \
@@ -21,6 +20,7 @@
             return (value); \
         } \
     } while(0)
+
 
 struct hashmap
 {
@@ -83,7 +83,7 @@ static bool isMapUnderloaded(map_t map)
     return currentLoad <= map->shrinkAt && map->initialCapacity < map->capacity;
 }
 
-// Rehashes elements to the new map (doesnt transfer tombstones from previous map)
+// Rehashes elements to the new map
 // returns the count of occupied buckets in the new map
 static size_t rehashMap(map_t map, bucket ***newBuckets, size_t newCapacity)
 {
@@ -97,7 +97,6 @@ static size_t rehashMap(map_t map, bucket ***newBuckets, size_t newCapacity)
         size_t checked = 0;
         while ((*newBuckets)[hashValue] != NULL && !map->keyType.cmp((*newBuckets)[hashValue]->key, map->buckets[i]->key))
         {
-            assert(checked++ < map->capacity);
             hashValue = (hashValue + 1) % newCapacity;
         }
         
