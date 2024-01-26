@@ -23,7 +23,6 @@
     } while(0)
 
 
-
 typedef struct 
 {
     void *key;
@@ -48,7 +47,6 @@ struct hashmap
     argumentType valueType;
 };
 
-// TODO: add function to print info about map state (used, capacity, collisions...)
 
 map_t hashmap_create(size_t capacity, float growAt, float shrinkAt, float growth, hash_t hashFunction, argumentType keyType, argumentType valueType)
 {
@@ -77,7 +75,6 @@ map_t hashmap_create(size_t capacity, float growAt, float shrinkAt, float growth
     map->valueType = valueType;
     return map;
 }
-
 
 // returns true if current load >= growAt or overflows in the next insert
 static bool isMapOverloaded(map_t map)
@@ -143,7 +140,12 @@ static size_t findBucket(map_t map, const void *key, bucket ***buckett) // * - t
     {
         while (map->buckets[hashValue] != NULL && !map->keyType.cmp(map->buckets[hashValue]->key, key))
         {
-            assert(checked++ < map->capacity);
+            if (checked++ >= map->capacity)
+            {
+                *buckett = NULL;
+                return 0;
+            }
+
             hashValue = (hashValue + 1) % map->capacity;
         }
     }
@@ -189,7 +191,7 @@ const void *hashmap_get(map_t map, const void *key)
     
     bucket **buckett = NULL;
     findBucket(map, key, &buckett);
-    if (*buckett == NULL)   
+    if (buckett == NULL)   
         return NULL;
 
     return (*buckett)->value;
@@ -240,6 +242,33 @@ bool hashmap_free(map_t map)
     free(map); 
 
     return true;
+}
+
+static size_t getCollisionCount(map_t map)
+{
+    size_t collisionCount = 0;
+    for (size_t i = 0; i < map->capacity; i++)
+    {
+        if (map->buckets[i] == NULL)
+            continue;
+
+        if (map->buckets[i]->offset != 0)
+            collisionCount++;
+    }
+    return collisionCount;
+}
+
+void hashmap_printInfo(map_t map)
+{
+    if (map == NULL)
+    {
+        errno = EINVAL;
+        return;
+    }
+
+    printf("[INFO] used: %zu\n", map->count);
+    printf("[INFO] capacity: %zu\n", map->capacity);
+    printf("[INFO] collisions: %zu\n",  getCollisionCount(map));
 }
 
 ///////////////////////////// BUILT-IN TYPES ///////////////////////////////////

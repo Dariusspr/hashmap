@@ -55,4 +55,11 @@ extern bool hashmap_free(map_t map);
 // returns true if successfully deleted
 extern bool hashmap_delete(map_t map, const void *key);
 
+/* Prints info about map:
+ * Used count
+ * Current capacity
+ * Collisions count (count of buckets which are not at key index)
+ * */
+extern void hashmap_printInfo(map_t map);
+
 #endif
