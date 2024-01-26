@@ -22,14 +22,6 @@
         } \
     } while(0)
 
-
-typedef struct 
-{
-    void *key;
-    void *value;
-    size_t offset;
-} bucket;
-
 struct hashmap
 {
     bucket **buckets;
@@ -258,17 +250,28 @@ static size_t getCollisionCount(map_t map)
     return collisionCount;
 }
 
-void hashmap_printInfo(map_t map)
+bool hashmap_printInfo(map_t map)
 {
-    if (map == NULL)
-    {
-        errno = EINVAL;
-        return;
-    }
-
+    CHECK_RETURN(map != NULL, EINVAL, false);
+   
     printf("[INFO] used: %zu\n", map->count);
     printf("[INFO] capacity: %zu\n", map->capacity);
     printf("[INFO] collisions: %zu\n",  getCollisionCount(map));
+    
+    return true;
+}
+
+const bucket **hashmap_getAll(map_t map)
+{
+    CHECK_RETURN(map != NULL, EINVAL, NULL);
+    return (const bucket **)map->buckets;    
+}
+
+
+size_t hashmap_getCapacity(map_t map)
+{
+    CHECK_RETURN(map != NULL, EINVAL,0);
+    return map->capacity;
 }
 
 ///////////////////////////// BUILT-IN TYPES ///////////////////////////////////

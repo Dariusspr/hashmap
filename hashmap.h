@@ -29,6 +29,14 @@
 typedef struct hashmap* map_t;
 typedef size_t (*hash_t)(const void *);
 
+typedef struct 
+{
+    void *key;
+    void *value;
+    size_t offset; // if offset is equal to zero, there are no collisions at hash index
+                   // else it indicates the difference between original index and current
+} bucket;
+
 typedef struct
 {
     void *(*copy)(const void *value);   // returns a pointer a dynamically allocated memory containing a copy of value
@@ -51,22 +59,34 @@ extern argumentType intType;
  * - hashFunction - a pointer to a function that takes const void * as an argument and returns size_t hashValue
  * - keyType - argumentType struct containing data comparision and copy functions
  * - valueType - argumentType struct containing data comparision and copy functions
+ * returns NULL and sets errno if fails
  * */
 extern map_t hashmap_create(size_t initialCapacity, float growAt, float shrinkAt, 
                             float growth, hash_t hashFunction, argumentType keyType, 
                             argumentType valueType);
 
 // Inserts <key, value> pair to hashmap or changes the value of the existing one
-// Returns true if successfully set
+// Returns false and sets errno if fails
 extern bool _hashmap_set(map_t map, const void *key, const void *value);
 
 // returns a const pointer to a value at key
 // returns NULL if key doesn't exist
+// return NULL and sets errno if fails
 extern const void *_hashmap_get(map_t map, const void *key);
+
+// returns an array of pointers to buckets(key,value)
+// modifications to an array will lead to changes in a map - may cause unexpected errors
+// some pointers may be equal to NULL, therefore, check before dereferencing
+// returns NULL and sets errno if fails
+extern const bucket **hashmap_getAll(map_t map);
+
+// returns map's current capacity
+// return 0 and sets errno if fails
+extern size_t hashmap_getCapacity(map_t map);
 
 // frees allocated memory for each element in 'map'
 // frees alloacated memory for 'map'
-// returns true if successfully freed
+// returns false and sets errno if fails
 extern bool hashmap_free(map_t map);
 
 // frees allocated memory for element at key
@@ -77,7 +97,8 @@ extern bool _hashmap_delete(map_t map, const void *key);
  * Used count
  * Current capacity
  * Collisions count (count of buckets which are not at key index)
+ * returns false and sets errno if fails
  * */
-extern void hashmap_printInfo(map_t map);
+extern bool hashmap_printInfo(map_t map);
 
 #endif
