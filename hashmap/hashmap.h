@@ -43,6 +43,7 @@ typedef struct
     void *(*copy)(const void *value);   // Returns a pointer a dynamically allocated memory containing a copy of value
                                         // If value is NULL, returns NULL
     bool (*cmp)(const void *value1, const void *value2); // Returns true if equal and value1 != NULL and value2 != NULL
+    void (*free)(void *value); // frees type and it's contents
 } argumentType;
 
 /* Built-in argument data types */

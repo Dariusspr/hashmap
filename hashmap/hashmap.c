@@ -83,7 +83,7 @@ static bool isMapUnderloaded(map_t map)
     return currentLoad <= map->shrinkAt && map->initialCapacity < map->capacity;
 }
 
-// Rehashes elements to the new map
+// Rehashes elements to the new map(skips tombstones)
 // returns the count of occupied buckets in the new map
 static size_t rehashMap(map_t map, bucket ***newBuckets, size_t newCapacity)
 {
@@ -92,6 +92,14 @@ static size_t rehashMap(map_t map, bucket ***newBuckets, size_t newCapacity)
     {
         if (map->buckets[i] == NULL)
             continue; // skip empty buckets
+        if (map->buckets[i]->value == NULL) // frees tombstones and continues
+        {
+            map->keyType.free(map->buckets[i]->key);
+            map->buckets[i]->key = NULL;
+            free(map->buckets[i]);
+            map->buckets[i] = NULL;
+            continue; 
+        }
 
         size_t hashValue = map->hash(map->buckets[i]->key) % newCapacity;
         size_t checked = 0;
@@ -127,18 +135,15 @@ static size_t findBucket(map_t map, const void *key, bucket ***buckett) // * - t
     size_t checked = 0;
     
     size_t hashValue = map->hash(key) % map->capacity; 
-    if (map->buckets[hashValue] != NULL)
+    while (map->buckets[hashValue] != NULL && !map->keyType.cmp(map->buckets[hashValue]->key, key))
     {
-        while (map->buckets[hashValue] != NULL && !map->keyType.cmp(map->buckets[hashValue]->key, key))
+        if (checked++ >= map->capacity)
         {
-            if (checked++ >= map->capacity)
-            {
-                *buckett = NULL;
-                return 0;
-            }
-
-            hashValue = (hashValue + 1) % map->capacity;
+            *buckett = NULL;
+            return 0;
         }
+
+        hashValue = (hashValue + 1) % map->capacity;
     }
     *buckett = &(map->buckets[hashValue]);
     
@@ -167,9 +172,9 @@ bool _hashmap_set(map_t map, const void *key, const void *value)
         
         map->count++;
     }
-    else
+    else if ((*buckett)->value != NULL)
     {
-        free((*buckett)->value); // free previous value
+        map->valueType.free((*buckett)->value);
     }
     (*buckett)->value = map->valueType.copy(value);       
     
@@ -182,16 +187,16 @@ const void *_hashmap_get(map_t map, const void *key)
     
     bucket **buckett = NULL;
     findBucket(map, key, &buckett);
-    if (buckett == NULL)   
+    // 1. such bucket doesnt exist(findBucket() - infinite loop) 2. uninitialized bucket 3. tombstone
+    if (buckett == NULL || *buckett == NULL ||(*buckett)->value == NULL)  
         return NULL;
-
+    
     return (*buckett)->value;
 }
 
 bool _hashmap_delete(map_t map, const void *key)
 {
     CHECK_RETURN(map != NULL && key != NULL, EINVAL, false);
-
     if (isMapUnderloaded(map))
     {
         size_t newCapacity = (map->capacity / map->growth < map->initialCapacity) ? map->initialCapacity : map->capacity / map->growth;
@@ -200,17 +205,13 @@ bool _hashmap_delete(map_t map, const void *key)
 
     bucket **buckett = NULL;
     findBucket(map, key, &buckett);
-    if (*buckett == NULL)
-    {
-        return false;
-    }
-
-    free((*buckett)->key);
-    free((*buckett)->value);
-    free(*buckett);
-    *buckett = NULL;
     
-    map->count--;
+    // 1. such bucket doesnt exist(findBucket() - infinite loop) 2. uninitialized bucket 3. tombstone
+    if (buckett == NULL || *buckett == NULL ||(*buckett)->value == NULL)  
+        return false;
+    
+    map->valueType.free((*buckett)->value);
+    (*buckett)->value = NULL;
     
     return true;
 }
@@ -223,15 +224,17 @@ bool hashmap_free(map_t map)
     {
         if (map->buckets[i] != NULL)
         {
-            free(map->buckets[i]->key);
-            free(map->buckets[i]->value);
+            map->keyType.free(map->buckets[i]->key);
+            map->valueType.free(map->buckets[i]->value);
             free(map->buckets[i]);
+            map->buckets[i] = NULL;
         }
     }
 
     free(map->buckets);
+    map->buckets = NULL;
     free(map); 
-
+    map = NULL;
     return true;
 }
 
@@ -301,7 +304,16 @@ static bool stringCmp(const void *value1, const void *value2)
     return strncmp(value1, value2, cmpSize) == 0;
 }
 
-argumentType stringType = {.copy = stringCopy, .cmp = stringCmp};
+static void stringFree(void *value)
+{
+    if (value == NULL)
+        return;
+
+    free(value);
+    value = NULL;
+}
+
+argumentType stringType = {.copy = stringCopy, .cmp = stringCmp, .free = stringFree};
 
 
 
@@ -328,4 +340,13 @@ static bool intCmp(const void *value1, const void *value2)
     return *(const int *) value1 == *(const int *)value2;
 }
 
-argumentType intType = {.copy = intCopy, .cmp = intCmp};
+static void intFree(void *value)
+{
+    if (value == NULL)
+        return;
+    
+    free(value);
+    value = NULL;
+}
+
+argumentType intType = {.copy = intCopy, .cmp = intCmp, .free= intFree};
